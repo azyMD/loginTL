@@ -26,11 +26,17 @@
     socket.on('onlinePlayers', (players) => {
       playersList.innerHTML = '';
       players.forEach((p) => {
-        if (p.userId == userId) return; // skip self
+        // Skip ourselves
+        if (p.userId == userId) return;
 
         const li = document.createElement('li');
-        li.textContent = `${p.displayName} ${p.inGame ? '(In Game)' : ''}`;
 
+        // Show name + stats
+        const info = document.createElement('span');
+        info.textContent = `${p.displayName} (Games: ${p.gamesCount}, Won: ${p.gamesWon}, Lost: ${p.gamesLost}) ${p.inGame ? '[In Game]' : ''} `;
+        li.appendChild(info);
+
+        // Challenge button if not in game
         if (!p.inGame) {
           const challengeBtn = document.createElement('button');
           challengeBtn.textContent = 'Challenge';
@@ -42,6 +48,7 @@
           };
           li.appendChild(challengeBtn);
         }
+
         playersList.appendChild(li);
       });
     });
