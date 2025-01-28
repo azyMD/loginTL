@@ -2,85 +2,98 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
   <title>TicTacToe Lobby</title>
-  <!-- Ensure this path is correct and points to an actual CSS file in public/css/ -->
   <link rel="stylesheet" href="css/styles.css" />
 </head>
 <body>
   <div class="container">
     <h1>TicTacToe Lobby</h1>
 
-    <!-- Table for online players -->
-    <table id="players-table" style="width:100%; border-collapse: collapse; margin-top: 20px;">
+    <!-- A table to list online players -->
+    <table id="players-table" style="width:100%; border-collapse:collapse; margin-top:20px;">
       <thead>
         <tr>
-          <th style="text-align:left; padding: 8px;">Player</th>
-          <th style="text-align:left; padding: 8px;">Games / Won / Lost</th>
-          <th style="text-align:left; padding: 8px;">Action</th>
+          <th style="text-align:left; padding:8px;">Player</th>
+          <th style="text-align:left; padding:8px;">Games / Won / Lost</th>
+          <th style="text-align:left; padding:8px;">Action</th>
         </tr>
       </thead>
       <tbody id="players-body"></tbody>
     </table>
   </div>
 
-  <!-- Socket.io -->
   <script src="/socket.io/socket.io.js"></script>
-
   <script>
     // Connect to Socket.io
     const socket = io();
 
-    // Where we'll place <tr> rows
+    // DOM reference for inserting rows
     const playersBody = document.getElementById('players-body');
 
     // Grab our userId from the query string
-    const urlParams = new URLSearchParams(window.location.search);
-    const userId = urlParams.get('userId');
+    const params = new URLSearchParams(window.location.search);
+    const userId = params.get('userId');
 
-    // Join the lobby on load
+    // Join the lobby
     socket.emit('joinLobby', { userId });
 
-    // Listen for updates about who is online
+    // Listen for the updated online player list
     socket.on('onlinePlayers', (players) => {
-      // Clear the table body
+      // Clear existing rows
       playersBody.innerHTML = '';
 
       players.forEach((p) => {
-        // Skip ourselves (no challenge button for our own user)
-        if (String(p.userId) === String(userId)) return;
+        // Build a fallback name so "NULL" won't show
+        // Attempt displayName first, then username, then first_name, then incognito_name
+        let name =
+          p.displayName ||
+          p.username ||
+          p.first_name ||
+          p.incognito_name ||
+          "Unknown";
 
-        // Create a row
+        // Convert stats to 0 if null/undefined
+        let gamesCount = p.gamesCount || 0;
+        let gamesWon   = p.gamesWon   || 0;
+        let gamesLost  = p.gamesLost  || 0;
+
+        // Create table row
         const row = document.createElement('tr');
 
-        // 1. Player Name
+        // 1) Name column
         const tdName = document.createElement('td');
-        tdName.style.padding = '8px';
-        tdName.textContent = p.displayName;
+        tdName.style.padding = "8px";
+        tdName.textContent = name;
         row.appendChild(tdName);
 
-        // 2. Stats (Games / Won / Lost)
+        // 2) Stats column
         const tdStats = document.createElement('td');
-        tdStats.style.padding = '8px';
-        tdStats.textContent = `${p.gamesCount} / ${p.gamesWon} / ${p.gamesLost}`;
+        tdStats.style.padding = "8px";
+        tdStats.textContent = `${gamesCount} / ${gamesWon} / ${gamesLost}`;
         row.appendChild(tdStats);
 
-        // 3. Action (Challenge or In Game)
+        // 3) Action column
         const tdAction = document.createElement('td');
-        tdAction.style.padding = '8px';
+        tdAction.style.padding = "8px";
 
-        if (p.inGame) {
-          tdAction.textContent = 'In Game';
+        // If this player is the same as me, no challenge
+        if (String(p.userId) === String(userId)) {
+          tdAction.textContent = "This is you";
+        } else if (p.inGame) {
+          // If user is already in a game
+          tdAction.textContent = "In Game";
         } else {
-          const btnChallenge = document.createElement('button');
-          btnChallenge.textContent = 'Challenge';
-          btnChallenge.onclick = () => {
+          // Show "Challenge" button
+          const challengeBtn = document.createElement('button');
+          challengeBtn.textContent = "Challenge";
+          challengeBtn.onclick = () => {
             socket.emit('challengePlayer', {
               challengerId: userId,
               challengedId: p.userId
             });
           };
-          tdAction.appendChild(btnChallenge);
+          tdAction.appendChild(challengeBtn);
         }
 
         row.appendChild(tdAction);
@@ -88,12 +101,12 @@
       });
     });
 
-    // When a game starts, redirect user to game page
+    // If a game starts, redirect the user
     socket.on('gameStarted', ({ gameId, opponentId }) => {
       window.location.href = `/game.html?gameId=${gameId}&userId=${userId}&opponentId=${opponentId}`;
     });
 
-    // Display errors from the server (if any)
+    // Show any error messages
     socket.on('errorMsg', (msg) => {
       alert(msg);
     });
