@@ -1,33 +1,101 @@
+<!-- public/index.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Telegram Login Example</title>
+  <title>TicTacToe Login</title>
+  <link rel="stylesheet" href="css/styles.css" />
 </head>
 <body>
-  <h1>Telegram Login Example</h1>
-  <script
-    async
-    src="https://telegram.org/js/telegram-widget.js?22"
-    data-telegram-login="logintl_bot"
-    data-size="large"
-    data-onauth="onTelegramAuth(user)"
-    data-request-access="write"
-  >
-  </script>
+  <h1>Welcome to TicTacToe!</h1>
+
+  <div id="login-options">
+    <h2>Choose login method:</h2>
+    <button id="btn-incognito">Incognito Login</button>
+    <div>
+      <!-- Telegram Login Widget -->
+      <script async
+              src="https://telegram.org/js/telegram-widget.js?22"
+              data-telegram-login="logintl_bot"  <!-- Replace with your actual bot username -->
+              data-size="large"
+              data-onauth="onTelegramAuth(user)"
+              data-request-access="write"
+      >
+      </script>
+    </div>
+  </div>
+
+  <!-- Incognito prompt -->
+  <div id="incognito-form" style="display: none;">
+    <input type="text" id="incognito-username" placeholder="Enter your username" />
+    <button id="incognito-submit">Go</button>
+  </div>
 
   <script>
+    const btnIncognito = document.getElementById('btn-incognito');
+    const incognitoForm = document.getElementById('incognito-form');
+    const incognitoUsername = document.getElementById('incognito-username');
+    const incognitoSubmit = document.getElementById('incognito-submit');
+
+    // Show incognito form
+    btnIncognito.addEventListener('click', () => {
+      incognitoForm.style.display = 'block';
+    });
+
+    // Incognito flow: call /incognito
+    incognitoSubmit.addEventListener('click', async () => {
+      const username = incognitoUsername.value.trim();
+      if (!username) {
+        alert('Please enter a username');
+        return;
+      }
+      try {
+        const res = await fetch('/incognito', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username })
+        });
+        if (!res.ok) {
+          const msg = await res.text();
+          alert('Error: ' + msg);
+          return;
+        }
+        const data = await res.json();
+        // data.userId, data.username
+        // Redirect to lobby with userId
+        window.location.href = `/lobby.html?userId=${data.userId}`;
+      } catch (err) {
+        console.error(err);
+        alert('Login failed');
+      }
+    });
+
+    // Telegram flow: onAuth
+    // Called by the widget: user param => { id, first_name, last_name, username, hash, auth_date, ... }
     function onTelegramAuth(user) {
-      // Example: send user data to /auth
+      // Send data to /auth to verify & store
       fetch('/auth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(user)
       })
-        .then((res) => res.text())
-        .then((data) => alert(`Server says: ${data}`))
-        .catch((err) => console.error('Error:', err));
+        .then(async (res) => {
+          if (!res.ok) {
+            const msg = await res.text();
+            alert('Error: ' + msg);
+            return;
+          }
+          // If success, redirect to lobby
+          // We can use user.id as userId in the URL
+          window.location.href = `/lobby.html?userId=${user.id}`;
+        })
+        .catch((err) => {
+          console.error('Telegram auth error:', err);
+          alert('Telegram login failed');
+        });
     }
+    // Expose the function globally
+    window.onTelegramAuth = onTelegramAuth;
   </script>
 </body>
 </html>
