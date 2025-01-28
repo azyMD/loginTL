@@ -1,48 +1,59 @@
 /* public/css/styles.css */
 
-/* Global reset & fonts */
+/* Global Reset & Typography */
 * {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
-  font-family: "Inter", Arial, sans-serif;
 }
-
 body {
-  background: #f5f6fa;
+  font-family: "Inter", Arial, sans-serif;
+  background: linear-gradient(135deg, #f5f6fa 0%, #dfe9f3 100%);
   color: #333;
-  line-height: 1.5;
+  line-height: 1.6;
 }
 
-/* Container with card-like feel */
+/* Container with a modern card style */
 .container {
   width: 90%;
   max-width: 700px;
-  margin: 40px auto;
-  padding: 20px;
+  margin: 50px auto;
+  padding: 30px;
   background: #fff;
-  border-radius: 12px;
-  box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+  border-radius: 16px;
+  box-shadow: 0 8px 20px rgba(0,0,0,0.1);
+  animation: fadeIn 0.3s ease;
+}
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
-h1, h2 {
+/* Headings */
+h1 {
   margin-bottom: 20px;
+  font-size: 2rem;
+}
+h2 {
+  margin-bottom: 15px;
+  font-size: 1.5rem;
 }
 
 /* Buttons */
 button {
   display: inline-block;
   padding: 10px 18px;
-  margin: 8px 0;
+  margin: 6px 0;
   background: #5468ff;
   color: #fff;
   border: none;
-  border-radius: 6px;
+  border-radius: 8px;
   cursor: pointer;
-  transition: background 0.2s ease;
+  transition: background 0.2s ease, transform 0.1s;
 }
 button:hover {
-  background: #4152c7;
+  background: #4052c7;
+  transform: scale(1.02);
 }
 
 /* Inputs */
@@ -50,30 +61,29 @@ input[type="text"] {
   padding: 10px;
   width: 100%;
   max-width: 300px;
-  margin-bottom: 10px;
+  margin: 8px 0 16px;
   border: 1px solid #ccc;
-  border-radius: 6px;
+  border-radius: 8px;
 }
 
-/* Lobby / Player list */
+/* Lobby Player List */
 #players-list {
-  list-style: none;
+  list-style-type: none;
   margin: 20px 0;
-  padding-left: 0;
 }
 #players-list li {
-  margin-bottom: 10px;
+  margin-bottom: 12px;
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
 
-/* TicTacToe board */
+/* TicTacToe Board */
 #board {
   display: grid;
   grid-template-columns: repeat(3, 80px);
-  gap: 5px;
-  margin-bottom: 15px;
+  gap: 8px;
+  margin-bottom: 20px;
 }
 #board div {
   width: 80px;
@@ -82,21 +92,32 @@ input[type="text"] {
   text-align: center;
   line-height: 80px;
   border: 2px solid #ddd;
-  border-radius: 10px;
+  border-radius: 12px;
   background: #fafafa;
-  transition: background 0.1s;
+  transition: background 0.1s, transform 0.1s;
   cursor: pointer;
 }
 #board div:hover {
   background: #f0f0f0;
+  transform: scale(1.03);
 }
 
+/* Status & Misc */
 #status {
-  margin-bottom: 15px;
-  font-weight: bold;
+  margin-bottom: 20px;
+  font-weight: 600;
 }
-
-/* Telegram login widget container override */
-.telegram-login-widget {
-  margin-top: 20px;
+.errorMsg {
+  background: #ffe3e3;
+  color: #cf2f2f;
+  padding: 10px;
+  margin-bottom: 10px;
+  border-radius: 8px;
+  animation: shake 0.3s ease;
+}
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-2px); }
+  50% { transform: translateX(2px); }
+  75% { transform: translateX(-2px); }
 }
