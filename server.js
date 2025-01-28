@@ -2,25 +2,42 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const crypto = require('crypto');
 const dotenv = require('dotenv');
+const path = require('path');
 
 dotenv.config();
 const app = express();
+
+// 1. Parse JSON bodies
 app.use(bodyParser.json());
 
-// Example /auth route
+// 2. Serve files from the "public" folder at the root path
+app.use(express.static('public'));
+
+// 3. Optional: Define a GET route for "/"
+//    This ensures that visiting "/" explicitly serves "public/index.html"
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// 4. Telegram verification route for POST /auth
 app.post('/auth', (req, res) => {
   const user = req.body;
   const { id, first_name, last_name, username, hash, auth_date } = user;
 
-  // 1. Create the data_check_string (sort user keys, exclude hash)
-  const secretKey = crypto.createHash('sha256').update(process.env.BOT_TOKEN).digest();
+  // (A) Create secretKey from BOT_TOKEN
+  const secretKey = crypto
+    .createHash('sha256')
+    .update(process.env.BOT_TOKEN)
+    .digest();
+
+  // (B) Build checkString (exclude hash, sort keys)
   const checkString = Object.keys(user)
-    .filter(key => key !== 'hash')
+    .filter((key) => key !== 'hash')
     .sort()
-    .map(key => `${key}=${user[key]}`)
+    .map((key) => `${key}=${user[key]}`)
     .join('\n');
 
-  // 2. Calculate HMAC
+  // (C) Calculate HMAC
   const hmac = crypto
     .createHmac('sha256', secretKey)
     .update(checkString)
@@ -30,10 +47,12 @@ app.post('/auth', (req, res) => {
     return res.status(403).send('Unauthorized: Invalid Telegram hash');
   }
 
-  // 3. If valid, proceed to store user data or create a session
-  // Example: respond with success
-  res.send(`Hello, ${first_name}, we got your data and it’s verified!`);
+  // If valid, respond or store user info in DB, create a session, etc.
+  res.send(`Hello, ${first_name}! We verified your Telegram data.`);
 });
 
+// 5. Start the server
 const PORT = process.env.PORT || 8080;
-app.listen(PORT, () => console.log('Server running on port', PORT));
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
