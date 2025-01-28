@@ -1,0 +1,102 @@
+/* public/css/styles.css */
+
+/* Global reset & fonts */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  font-family: "Inter", Arial, sans-serif;
+}
+
+body {
+  background: #f5f6fa;
+  color: #333;
+  line-height: 1.5;
+}
+
+/* Container with card-like feel */
+.container {
+  width: 90%;
+  max-width: 700px;
+  margin: 40px auto;
+  padding: 20px;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+}
+
+h1, h2 {
+  margin-bottom: 20px;
+}
+
+/* Buttons */
+button {
+  display: inline-block;
+  padding: 10px 18px;
+  margin: 8px 0;
+  background: #5468ff;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+button:hover {
+  background: #4152c7;
+}
+
+/* Inputs */
+input[type="text"] {
+  padding: 10px;
+  width: 100%;
+  max-width: 300px;
+  margin-bottom: 10px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+}
+
+/* Lobby / Player list */
+#players-list {
+  list-style: none;
+  margin: 20px 0;
+  padding-left: 0;
+}
+#players-list li {
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* TicTacToe board */
+#board {
+  display: grid;
+  grid-template-columns: repeat(3, 80px);
+  gap: 5px;
+  margin-bottom: 15px;
+}
+#board div {
+  width: 80px;
+  height: 80px;
+  font-size: 2em;
+  text-align: center;
+  line-height: 80px;
+  border: 2px solid #ddd;
+  border-radius: 10px;
+  background: #fafafa;
+  transition: background 0.1s;
+  cursor: pointer;
+}
+#board div:hover {
+  background: #f0f0f0;
+}
+
+#status {
+  margin-bottom: 15px;
+  font-weight: bold;
+}
+
+/* Telegram login widget container override */
+.telegram-login-widget {
+  margin-top: 20px;
+}
