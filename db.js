@@ -1,14 +1,13 @@
 // db.js
 const mysql = require('mysql2/promise');
-const dotenv = require('dotenv');
 
-dotenv.config();
-
+// WARNING: In production, typically store these in .env, but as requested:
 const pool = mysql.createPool({
-  host: process.env.DB_HOST,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASS,
-  database: process.env.DB_NAME,
+  host: 'mysql.railway.internal',
+  user: 'root',
+  password: 'WjqSRnHZVJhPmjytUPbCFXmnvdSrwCxG',
+  database: 'railway',
+  port: 3306,
 });
 
 module.exports = { pool };
