@@ -1,0 +1,60 @@
+<!-- public/lobby.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>TicTacToe Lobby</title>
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <h1>TicTacToe Lobby</h1>
+  <ul id="players-list"></ul>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+    const playersList = document.getElementById('players-list');
+
+    // Parse userId from URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const userId = urlParams.get('userId');
+
+    // Join the lobby
+    socket.emit('joinLobby', { userId });
+
+    // Update online players
+    socket.on('onlinePlayers', (players) => {
+      // Clear list
+      playersList.innerHTML = '';
+      players.forEach((p) => {
+        // Skip ourselves
+        if (p.userId == userId) return;
+
+        const li = document.createElement('li');
+        li.textContent = `${p.displayName} ${p.inGame ? '(In Game)' : ''}`;
+        if (!p.inGame) {
+          const btn = document.createElement('button');
+          btn.textContent = 'Challenge';
+          btn.onclick = () => {
+            socket.emit('challengePlayer', {
+              challengerId: userId,
+              challengedId: p.userId,
+            });
+          };
+          li.appendChild(btn);
+        }
+        playersList.appendChild(li);
+      });
+    });
+
+    // When game starts, redirect to game page
+    socket.on('gameStarted', ({ gameId, opponentId }) => {
+      window.location.href = `/game.html?gameId=${gameId}&userId=${userId}&opponentId=${opponentId}`;
+    });
+
+    socket.on('errorMsg', (msg) => {
+      alert(msg);
+    });
+  </script>
+</body>
+</html>
