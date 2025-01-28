@@ -1,0 +1,85 @@
+<!-- public/game.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>TicTacToe Game</title>
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <h1>TicTacToe - In Game</h1>
+  <div id="status"></div>
+  <div id="board" style="display: grid; grid-template-columns: repeat(3, 80px); gap: 5px;"></div>
+  <button id="quit-btn">Quit</button>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+    const boardEl = document.getElementById('board');
+    const statusEl = document.getElementById('status');
+    const quitBtn = document.getElementById('quit-btn');
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const gameId = urlParams.get('gameId');
+    const userId = urlParams.get('userId');
+    const opponentId = urlParams.get('opponentId');
+
+    // Create 9 cells
+    for (let i = 0; i < 9; i++) {
+      const cell = document.createElement('div');
+      cell.style.width = '80px';
+      cell.style.height = '80px';
+      cell.style.border = '1px solid #000';
+      cell.style.fontSize = '2em';
+      cell.style.textAlign = 'center';
+      cell.style.lineHeight = '80px';
+      cell.dataset.index = i;
+      cell.addEventListener('click', () => makeMove(i));
+      boardEl.appendChild(cell);
+    }
+
+    function makeMove(cellIndex) {
+      socket.emit('makeMove', { gameId, userId, cellIndex });
+    }
+
+    socket.on('updateGame', ({ board, currentTurn, winner }) => {
+      // Render board
+      const cells = boardEl.children;
+      for (let i = 0; i < 9; i++) {
+        cells[i].textContent = board[i] || '';
+      }
+      // Update status
+      if (winner === 'tie') {
+        statusEl.textContent = 'Game ended in a tie!';
+      } else if (winner) {
+        if (winner === userId) {
+          statusEl.textContent = 'You won!';
+        } else {
+          statusEl.textContent = 'Opponent won!';
+        }
+      } else {
+        // No winner, show whose turn
+        statusEl.textContent = (currentTurn == userId)
+          ? 'Your turn!'
+          : 'Opponent\'s turn!';
+      }
+    });
+
+    socket.on('gameEnded', ({ winner }) => {
+      if (winner === 'tie') {
+        alert('Game ended in a tie!');
+      } else if (winner == userId) {
+        alert('You won!');
+      } else {
+        alert('You lost!');
+      }
+      // Return to lobby
+      window.location.href = `/lobby.html?userId=${userId}`;
+    });
+
+    quitBtn.addEventListener('click', () => {
+      socket.emit('quitGame', { gameId, userId });
+    });
+  </script>
+</body>
+</html>
