@@ -9,6 +9,7 @@
 <body>
   <div class="container">
     <h1>TicTacToe - Match</h1>
+
     <div id="status"></div>
     <div id="board"></div>
 
@@ -18,22 +19,17 @@
     </div>
   </div>
 
-  <!-- Socket.io client -->
   <script src="/socket.io/socket.io.js"></script>
   <script>
-    console.log("Game page JS loaded!");
+    console.log("Game page loaded!");
 
-    // 1. Connect to Socket.io
-    const socket = io();
-    console.log("Socket connected:", socket);
+    const socket     = io();
+    const boardEl    = document.getElementById('board');
+    const statusEl   = document.getElementById('status');
+    const replayBtn  = document.getElementById('replay-btn');
+    const quitBtn    = document.getElementById('quit-btn');
 
-    // 2. Grab DOM elements
-    const boardEl   = document.getElementById('board');
-    const statusEl  = document.getElementById('status');
-    const replayBtn = document.getElementById('replay-btn');
-    const quitBtn   = document.getElementById('quit-btn');
-
-    // 3. Parse query params
+    // Grab query params
     const params     = new URLSearchParams(window.location.search);
     const gameId     = params.get('gameId');
     const userId     = params.get('userId');
@@ -41,7 +37,7 @@
 
     console.log("GameID:", gameId, "UserID:", userId, "OpponentID:", opponentId);
 
-    // 4. Build the 3x3 board
+    // Build 3x3 board
     for (let i = 0; i < 9; i++) {
       const cell = document.createElement('div');
       cell.dataset.index = i;
@@ -52,22 +48,20 @@
       boardEl.appendChild(cell);
     }
 
-    // 5. Make a move => emit to server
+    // Make a move => send to server
     function makeMove(cellIndex) {
-      console.log("Emitting makeMove event with:", { gameId, userId, cellIndex });
       socket.emit('makeMove', { gameId, userId, cellIndex });
     }
 
-    // 6. Listen for server updates
-    socket.on('updateGame', (payload) => {
-      console.log("Received updateGame from server:", payload);
-      const { board, currentTurn, winner } = payload;
+    // Listen for server updates
+    socket.on('updateGame', ({ board, currentTurn, winner }) => {
+      console.log("updateGame =>", board, currentTurn, winner);
       renderBoard(board);
       renderStatus(currentTurn, winner);
     });
 
     socket.on('gameEnded', ({ winner }) => {
-      console.log("Received gameEnded event. Winner:", winner);
+      console.log("gameEnded => Winner:", winner);
       if (winner === 'tie') {
         alert("It’s a tie!");
       } else if (String(winner) === String(userId)) {
@@ -79,28 +73,28 @@
       window.location.href = `/lobby.html?userId=${userId}`;
     });
 
-    // 7. Replay / Quit
+    // Replay => sendChallenge to the same opponent again
     replayBtn.addEventListener('click', () => {
-      console.log("Replay button clicked, re-challenging same opponent...");
-      socket.emit('challengePlayer', {
+      console.log("Replay button => re-challenge same opponent.");
+      socket.emit('sendChallenge', {
         challengerId: userId,
         challengedId: opponentId
       });
     });
 
+    // Quit => forfeit
     quitBtn.addEventListener('click', () => {
-      console.log("Quit button clicked, emitting quitGame...");
+      console.log("Quit => forfeit game", gameId);
       socket.emit('quitGame', { gameId, userId });
     });
 
-    // 8. If new game is started by replay
+    // If a new game is started after replay accepted
     socket.on('gameStarted', ({ gameId: newGameId, opponentId: newOpp }) => {
-      console.log("Received gameStarted for new match:", newGameId, newOpp);
-      // redirect to new game
+      console.log("New game started =>", newGameId, newOpp);
       window.location.href = `/game.html?gameId=${newGameId}&userId=${userId}&opponentId=${newOpp}`;
     });
 
-    // ---- HELPER Functions ----
+    // Helpers
     function renderBoard(board) {
       const cells = boardEl.children;
       for (let i = 0; i < 9; i++) {
@@ -110,7 +104,7 @@
 
     function renderStatus(currentTurn, winner) {
       if (winner === 'tie') {
-        statusEl.textContent = "It's a tie!";
+        statusEl.textContent = "It’s a tie!";
       } else if (winner) {
         if (String(winner) === String(userId)) {
           statusEl.textContent = "You Won!";
@@ -118,11 +112,11 @@
           statusEl.textContent = "Opponent Won!";
         }
       } else {
-        // No winner => whose turn?
+        // Whose turn
         if (String(currentTurn) === String(userId)) {
           statusEl.textContent = "Your turn...";
         } else {
-          statusEl.textContent = "Opponent's turn...";
+          statusEl.textContent = "Opponent’s turn...";
         }
       }
     }
