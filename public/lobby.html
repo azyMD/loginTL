@@ -2,61 +2,98 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="UTF-8">
   <title>TicTacToe Lobby</title>
+  <!-- Ensure this path is correct and points to an actual CSS file in public/css/ -->
   <link rel="stylesheet" href="css/styles.css" />
 </head>
 <body>
   <div class="container">
     <h1>TicTacToe Lobby</h1>
-    <ul id="players-list"></ul>
+
+    <!-- Table for online players -->
+    <table id="players-table" style="width:100%; border-collapse: collapse; margin-top: 20px;">
+      <thead>
+        <tr>
+          <th style="text-align:left; padding: 8px;">Player</th>
+          <th style="text-align:left; padding: 8px;">Games / Won / Lost</th>
+          <th style="text-align:left; padding: 8px;">Action</th>
+        </tr>
+      </thead>
+      <tbody id="players-body"></tbody>
+    </table>
   </div>
 
+  <!-- Socket.io -->
   <script src="/socket.io/socket.io.js"></script>
+
   <script>
+    // Connect to Socket.io
     const socket = io();
-    const playersList = document.getElementById('players-list');
 
-    const params = new URLSearchParams(window.location.search);
-    const userId = params.get('userId');
+    // Where we'll place <tr> rows
+    const playersBody = document.getElementById('players-body');
 
-    // Join the lobby
+    // Grab our userId from the query string
+    const urlParams = new URLSearchParams(window.location.search);
+    const userId = urlParams.get('userId');
+
+    // Join the lobby on load
     socket.emit('joinLobby', { userId });
 
+    // Listen for updates about who is online
     socket.on('onlinePlayers', (players) => {
-      playersList.innerHTML = '';
+      // Clear the table body
+      playersBody.innerHTML = '';
+
       players.forEach((p) => {
-        // Skip ourselves
-        if (p.userId == userId) return;
+        // Skip ourselves (no challenge button for our own user)
+        if (String(p.userId) === String(userId)) return;
 
-        const li = document.createElement('li');
+        // Create a row
+        const row = document.createElement('tr');
 
-        // Show name + stats
-        const info = document.createElement('span');
-        info.textContent = `${p.displayName} (Games: ${p.gamesCount}, Won: ${p.gamesWon}, Lost: ${p.gamesLost}) ${p.inGame ? '[In Game]' : ''} `;
-        li.appendChild(info);
+        // 1. Player Name
+        const tdName = document.createElement('td');
+        tdName.style.padding = '8px';
+        tdName.textContent = p.displayName;
+        row.appendChild(tdName);
 
-        // Challenge button if not in game
-        if (!p.inGame) {
-          const challengeBtn = document.createElement('button');
-          challengeBtn.textContent = 'Challenge';
-          challengeBtn.onclick = () => {
+        // 2. Stats (Games / Won / Lost)
+        const tdStats = document.createElement('td');
+        tdStats.style.padding = '8px';
+        tdStats.textContent = `${p.gamesCount} / ${p.gamesWon} / ${p.gamesLost}`;
+        row.appendChild(tdStats);
+
+        // 3. Action (Challenge or In Game)
+        const tdAction = document.createElement('td');
+        tdAction.style.padding = '8px';
+
+        if (p.inGame) {
+          tdAction.textContent = 'In Game';
+        } else {
+          const btnChallenge = document.createElement('button');
+          btnChallenge.textContent = 'Challenge';
+          btnChallenge.onclick = () => {
             socket.emit('challengePlayer', {
               challengerId: userId,
               challengedId: p.userId
             });
           };
-          li.appendChild(challengeBtn);
+          tdAction.appendChild(btnChallenge);
         }
 
-        playersList.appendChild(li);
+        row.appendChild(tdAction);
+        playersBody.appendChild(row);
       });
     });
 
+    // When a game starts, redirect user to game page
     socket.on('gameStarted', ({ gameId, opponentId }) => {
       window.location.href = `/game.html?gameId=${gameId}&userId=${userId}&opponentId=${opponentId}`;
     });
 
+    // Display errors from the server (if any)
     socket.on('errorMsg', (msg) => {
       alert(msg);
     });
