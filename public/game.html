@@ -4,38 +4,45 @@
 <head>
   <meta charset="UTF-8" />
   <title>TicTacToe Game</title>
+  <!-- Ensure your CSS file is at "public/css/styles.css" -->
   <link rel="stylesheet" href="css/styles.css" />
 </head>
 <body>
   <div class="container">
     <h1>TicTacToe - Match</h1>
-    
+
+    <!-- Show game status (who's turn, winner, tie, etc.) -->
     <div id="status"></div>
-    
+
+    <!-- The 3x3 board -->
     <div id="board"></div>
-    
+
+    <!-- Buttons for replaying or quitting -->
     <div style="margin-top: 15px;">
       <button id="replay-btn">Replay</button>
       <button id="quit-btn" style="margin-left: 10px;">Quit</button>
     </div>
   </div>
 
+  <!-- Socket.io -->
   <script src="/socket.io/socket.io.js"></script>
   <script>
-    const socket = io();
+    // Connect to Socket.io
+    const socket     = io();
 
-    const boardEl   = document.getElementById('board');
-    const statusEl  = document.getElementById('status');
-    const replayBtn = document.getElementById('replay-btn');
-    const quitBtn   = document.getElementById('quit-btn');
+    // DOM elements
+    const boardEl    = document.getElementById('board');
+    const statusEl   = document.getElementById('status');
+    const replayBtn  = document.getElementById('replay-btn');
+    const quitBtn    = document.getElementById('quit-btn');
 
-    // Grab query params: gameId, userId, opponentId
-    const params    = new URLSearchParams(window.location.search);
-    const gameId    = params.get('gameId');
-    const userId    = params.get('userId');
-    const opponentId= params.get('opponentId');
+    // Parse query params: ?gameId=xxx&userId=xxx&opponentId=xxx
+    const params     = new URLSearchParams(window.location.search);
+    const gameId     = params.get('gameId');
+    const userId     = params.get('userId');
+    const opponentId = params.get('opponentId');
 
-    // Build 9 cells
+    // 1. Build the 3x3 board visually (9 cells)
     for (let i = 0; i < 9; i++) {
       const cell = document.createElement('div');
       cell.dataset.index = i;
@@ -43,47 +50,47 @@
       boardEl.appendChild(cell);
     }
 
+    // 2. Make a move => send to server
     function makeMove(cellIndex) {
       socket.emit('makeMove', { gameId, userId, cellIndex });
     }
 
-    // Listen for updates from server
+    // 3. Listen for game updates from server
     socket.on('updateGame', ({ board, currentTurn, winner }) => {
       renderBoard(board);
       renderStatus(currentTurn, winner);
     });
 
+    // 4. If the game ends, server sends 'gameEnded'
     socket.on('gameEnded', ({ winner }) => {
-      // If you want stats, final messages, etc.
       if (winner === 'tie') {
         alert('The game ended in a tie!');
-      } else if (winner == userId) {
+      } else if (String(winner) === String(userId)) {
         alert('You won!');
       } else {
         alert('Opponent won!');
       }
-      // Return to lobby or do something else
+      // Return to lobby (or do something else)
       window.location.href = `/lobby.html?userId=${userId}`;
     });
 
-    // Replay button logic
+    // 5. Replay button => challenge same opponent again
     replayBtn.addEventListener('click', () => {
-      // You might handle "replay" by forcing a new game with the same players
-      // For example, we can create a new challenge from userId -> opponentId
+      // We simply emit 'challengePlayer' to start a new game
+      // The server should handle "challengePlayer" and emit "gameStarted" with a new gameId
       socket.emit('challengePlayer', {
         challengerId: userId,
         challengedId: opponentId
       });
-      // Then your server triggers "gameStarted" again
-      // and sends both players to a new gameId
+      // Then we'll get 'gameStarted' => redirect to new gameId
     });
 
-    // Quit button => triggers "quitGame"
+    // 6. Quit button => forfeit
     quitBtn.addEventListener('click', () => {
       socket.emit('quitGame', { gameId, userId });
     });
 
-    // Helper: Update the board UI
+    // Helper to render board state
     function renderBoard(board) {
       const cells = boardEl.children;
       for (let i = 0; i < 9; i++) {
@@ -91,21 +98,31 @@
       }
     }
 
-    // Helper: Show turn or winner
+    // Helper to show status (turn or winner)
     function renderStatus(currentTurn, winner) {
       if (winner === 'tie') {
         statusEl.textContent = 'It’s a tie!';
       } else if (winner) {
-        statusEl.textContent = (winner == userId) ? 'You Won!' : 'Opponent Won!';
+        if (String(winner) === String(userId)) {
+          statusEl.textContent = 'You Won!';
+        } else {
+          statusEl.textContent = 'Opponent Won!';
+        }
       } else {
-        // Show whose turn
-        if (currentTurn == userId) {
+        // No winner => show whose turn
+        if (String(currentTurn) === String(userId)) {
           statusEl.textContent = 'Your turn...';
         } else {
           statusEl.textContent = 'Opponent’s turn...';
         }
       }
     }
+
+    // 7. The server might re-send "gameStarted" if replay is triggered
+    socket.on('gameStarted', ({ gameId: newGameId, opponentId: newOpp }) => {
+      // Move to the new game page
+      window.location.href = `/game.html?gameId=${newGameId}&userId=${userId}&opponentId=${newOpp}`;
+    });
   </script>
 </body>
 </html>
