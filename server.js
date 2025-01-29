@@ -14,11 +14,11 @@ const app = express();
 const httpServer = createServer(app);
 const io = new Server(httpServer);
 
-app.use(express.static('public')); // Serve static from "public" folder
+app.use(express.static('public'));
 app.use(bodyParser.json());
 
 // In-memory objects
-let onlineUsers = {};         // userId -> { userId, socketId, userName, inGame, gamesCount, gamesWon, gamesLost }
+let onlineUsers = {};         // userId -> { userId, socketId, userName, inGame, stats... }
 let activeGames = {};         // gameId -> { players:[p1, p2], board:[9], currentTurn, winner, replayVotes:{} }
 let pendingChallenges = {};   // challengedId -> { challengerId, challengedId }
 
@@ -30,7 +30,7 @@ app.post('/auth', async (req, res) => {
   }
 
   // Validate hash
-  const BOT_TOKEN = process.env.BOT_TOKEN; // e.g. "1234:ABC..."
+  const BOT_TOKEN = process.env.BOT_TOKEN;
   if (!BOT_TOKEN) return res.status(500).send('No BOT_TOKEN set');
 
   const secretKey = crypto.createHash('sha256').update(BOT_TOKEN).digest();
@@ -44,14 +44,14 @@ app.post('/auth', async (req, res) => {
     return res.status(403).send('Invalid Telegram hash');
   }
 
-  // Insert or update user => username from data.username or fallback
+  // Insert or update user
   try {
     const userName = data.username || data.first_name || `TG#${data.id}`;
     const sql = `
-      INSERT INTO users (telegram_id, username, is_incognito)
+      INSERT INTO users (telegram_id, user_name, is_incognito)
       VALUES (?, ?, 0)
       ON DUPLICATE KEY UPDATE
-        username = VALUES(username)
+        user_name = VALUES(user_name)
     `;
     await pool.query(sql, [data.id, userName]);
     res.send('Telegram login success');
@@ -67,7 +67,7 @@ app.post('/incognito', async (req, res) => {
   if (!username) return res.status(400).send('No username');
 
   try {
-    const sql = `INSERT INTO users (username, is_incognito) VALUES (?, 1)`;
+    const sql = `INSERT INTO users (user_name, is_incognito) VALUES (?, 1)`;
     const [result] = await pool.query(sql, [username]);
     const userId = result.insertId;
     res.json({ success: true, userId });
@@ -77,7 +77,7 @@ app.post('/incognito', async (req, res) => {
   }
 });
 
-// ========== Serve Lobby and Game HTML (Optional) ==========
+// ========== Serve Pages ==========
 app.get('/lobby', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'lobby.html'));
 });
@@ -85,16 +85,15 @@ app.get('/game', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'game.html'));
 });
 
-// ========== Socket.io Events ==========
+// ========== Socket.IO Logic ==========
 io.on('connection', (socket) => {
   console.log('Socket connected:', socket.id);
 
   // 1) Join Lobby
   socket.on('joinLobby', async ({ userId }) => {
     try {
-      // Load user from DB
       const [rows] = await pool.query(`
-        SELECT id, telegram_id, username, is_incognito,
+        SELECT id, telegram_id, user_name, is_incognito,
                games_count, games_won, games_lost
         FROM users
         WHERE id = ? OR telegram_id = ?
@@ -110,7 +109,7 @@ io.on('connection', (socket) => {
       onlineUsers[dbUser.id] = {
         userId: dbUser.id,
         socketId: socket.id,
-        userName: dbUser.username,
+        userName: dbUser.user_name,
         inGame: false,
         gamesCount: dbUser.games_count || 0,
         gamesWon:   dbUser.games_won   || 0,
@@ -124,7 +123,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  // 2) Send Challenge => store pending challenge
+  // 2) Send Challenge
   socket.on('sendChallenge', ({ challengerId, challengedId }) => {
     console.log(`sendChallenge from ${challengerId} to ${challengedId}`);
     if (!onlineUsers[challengerId] || !onlineUsers[challengedId]) {
@@ -160,254 +159,171 @@ io.on('connection', (socket) => {
     activeGames[gameId] = {
       players: [challengerId, challengedId],
       board: Array(9).fill(null),
-      currentTurn: challengerId, // challenger goes first
+      currentTurn: challengerId,
       winner: null,
       replayVotes: {}
     };
-    if (onlineUsers[challengerId]) onlineUsers[challengerId].inGame = true;
-    if (onlineUsers[challengedId]) onlineUsers[challengedId].inGame = true;
-
-    console.log('Challenge accepted => game', gameId);
-
-    // Notify both
-    if (onlineUsers[challengerId]) {
-      io.to(onlineUsers[challengerId].socketId).emit('gameStarted', {
-        gameId,
-        opponentId: challengedId
-      });
-    }
-    if (onlineUsers[challengedId]) {
-      io.to(onlineUsers[challengedId].socketId).emit('gameStarted', {
-        gameId,
-        opponentId: challengerId
-      });
-    }
+    io.to(onlineUsers[challengerId].socketId).emit('gameStarted', { gameId, opponentId: challengedId });
+    io.to(onlineUsers[challengedId].socketId).emit('gameStarted', { gameId, opponentId: challengerId });
 
     broadcastLobby();
   });
+});
+// server.js
+const express = require('express');
+const { createServer } = require('http');
+const { Server } = require('socket.io');
+const bodyParser = require('body-parser');
+const crypto = require('crypto');
+const path = require('path');
+const dotenv = require('dotenv');
+const { pool } = require('./db');
 
-  // 4) Refuse
-  socket.on('refuseChallenge', ({ challengedId }) => {
+dotenv.config();
+
+const app = express();
+const httpServer = createServer(app);
+const io = new Server(httpServer);
+
+app.use(express.static('public'));
+app.use(bodyParser.json());
+
+// Store active users and games
+let onlineUsers = {};  
+let pendingChallenges = {};  
+let activeGames = {};  
+
+// ========== TELEGRAM AUTH ==========
+app.post('/auth', async (req, res) => {
+  const data = req.body;
+  if (!data.id || !data.hash) return res.status(400).send('Missing Telegram data');
+
+  const BOT_TOKEN = process.env.BOT_TOKEN;
+  if (!BOT_TOKEN) return res.status(500).send('No BOT_TOKEN in .env');
+
+  const secretKey = crypto.createHash('sha256').update(BOT_TOKEN).digest();
+  const checkString = Object.keys(data)
+    .filter(k => k !== 'hash')
+    .sort()
+    .map(k => `${k}=${data[k]}`)
+    .join('\n');
+  const hmac = crypto.createHmac('sha256', secretKey).update(checkString).digest('hex');
+
+  if (hmac !== data.hash) return res.status(403).send('Invalid Telegram hash');
+
+  try {
+    const userName = data.username || data.first_name || `TG#${data.id}`;
+    const sql = `
+      INSERT INTO users (telegram_id, user_name, is_incognito)
+      VALUES (?, ?, 0)
+      ON DUPLICATE KEY UPDATE user_name = VALUES(user_name)
+    `;
+    await pool.query(sql, [data.id, userName]);
+    res.send('Telegram login success');
+  } catch (err) {
+    console.error('Telegram DB error:', err);
+    res.status(500).send('DB error');
+  }
+});
+
+// ========== INCOGNITO LOGIN ==========
+app.post('/incognito', async (req, res) => {
+  const { username } = req.body;
+  if (!username) return res.status(400).send('No username');
+
+  try {
+    const sql = `INSERT INTO users (user_name, is_incognito) VALUES (?, 1)`;
+    const [result] = await pool.query(sql, [username]);
+    const userId = result.insertId;
+    res.json({ success: true, userId });
+  } catch (err) {
+    console.error('Incognito DB error:', err);
+    res.status(500).send('Error creating incognito user');
+  }
+});
+
+// ========== Socket.io Logic ==========
+io.on('connection', (socket) => {
+  console.log('Socket connected:', socket.id);
+
+  // Player joins lobby
+  socket.on('joinLobby', async ({ userId }) => {
+    try {
+      const [rows] = await pool.query(`
+        SELECT id, user_name, games_count, games_won, games_lost FROM users WHERE id = ?
+      `, [userId]);
+
+      if (!rows.length) return socket.emit('errorMsg', 'User not found');
+
+      const user = rows[0];
+      onlineUsers[userId] = {
+        userId: user.id,
+        socketId: socket.id,
+        userName: user.user_name,
+        inGame: false,
+        gamesCount: user.games_count,
+        gamesWon: user.games_won,
+        gamesLost: user.games_lost
+      };
+
+      io.emit('onlinePlayers', Object.values(onlineUsers));
+    } catch (err) {
+      console.error('joinLobby error:', err);
+      socket.emit('errorMsg', 'Failed to join lobby');
+    }
+  });
+
+  // Send Challenge
+  socket.on('sendChallenge', ({ challengerId, challengedId }) => {
+    if (!onlineUsers[challengedId]) return socket.emit('errorMsg', 'User is offline');
+
+    pendingChallenges[challengedId] = { challengerId, challengedId };
+    io.to(onlineUsers[challengedId].socketId).emit('challengeReceived', {
+      fromId: challengerId,
+      fromName: onlineUsers[challengerId].userName
+    });
+  });
+
+  // Accept Challenge
+  socket.on('acceptChallenge', ({ challengedId }) => {
     const ch = pendingChallenges[challengedId];
-    if (!ch) return;
+    if (!ch) return socket.emit('errorMsg', 'No challenge found');
+
     delete pendingChallenges[challengedId];
 
-    const { challengerId } = ch;
-    console.log(`User ${challengedId} refused challenge from ${challengerId}`);
-    // Notify challenger
-    if (onlineUsers[challengerId]) {
-      io.to(onlineUsers[challengerId].socketId).emit('challengeRefused', {
-        refusedBy: challengedId
-      });
-    }
+    const gameId = `game_${Date.now()}_${ch.challengerId}_${ch.challengedId}`;
+    activeGames[gameId] = {
+      players: [ch.challengerId, ch.challengedId],
+      board: Array(9).fill(null),
+      currentTurn: ch.challengerId,
+      winner: null
+    };
+
+    io.to(onlineUsers[ch.challengerId].socketId).emit('gameStarted', { gameId, opponentId: challengedId });
+    io.to(onlineUsers[ch.challengedId].socketId).emit('gameStarted', { gameId, opponentId: ch.challengerId });
+
+    onlineUsers[ch.challengerId].inGame = true;
+    onlineUsers[ch.challengedId].inGame = true;
+
+    io.emit('onlinePlayers', Object.values(onlineUsers));
   });
 
-  // 5) Make Move => turn-based
+  // Make Move
   socket.on('makeMove', ({ gameId, userId, cellIndex }) => {
-    console.log(`makeMove from user ${userId}, cell ${cellIndex}, game ${gameId}`);
     const game = activeGames[gameId];
-    if (!game) return;
+    if (!game || game.currentTurn !== userId || game.board[cellIndex]) return;
 
-    // Must be your turn, cell not used, no winner
-    if (String(game.currentTurn) !== String(userId) || game.board[cellIndex] || game.winner) {
-      return; // ignore invalid
-    }
+    game.board[cellIndex] = userId === game.players[0] ? 'X' : 'O';
+    game.currentTurn = game.players.find(pid => pid !== userId);
 
-    const [p1, p2] = game.players;
-    const mark = (String(userId) === String(p1)) ? 'X' : 'O';
-    game.board[cellIndex] = mark;
-
-    // Check winner
-    const wMark = checkWinner(game.board);
-    if (wMark) {
-      game.winner = (wMark === 'X') ? p1 : p2;
-    } else if (game.board.every(c => c !== null)) {
-      game.winner = 'tie';
-    } else {
-      // Switch turn
-      game.currentTurn = (String(game.currentTurn) === String(p1)) ? p2 : p1;
-    }
-
-    // Update both
-    game.players.forEach(pid => {
-      if (onlineUsers[pid]) {
-        io.to(onlineUsers[pid].socketId).emit('updateGame', {
-          board: game.board,
-          currentTurn: game.currentTurn,
-          winner: game.winner
-        });
-      }
-    });
+    io.to(onlineUsers[game.players[0]].socketId).emit('updateGame', game);
+    io.to(onlineUsers[game.players[1]].socketId).emit('updateGame', game);
   });
 
-  // 6) Quit => forfeit
   socket.on('quitGame', ({ gameId, userId }) => {
-    console.log(`quitGame from user ${userId}, game ${gameId}`);
-    const game = activeGames[gameId];
-    if (!game) return;
-
-    if (!game.winner) {
-      // The other wins
-      const [p1, p2] = game.players;
-      game.winner = (String(p1) === String(userId)) ? p2 : p1;
-    }
-    endGame(gameId);
-  });
-
-  // 7) Replay => both must accept => reset
-  socket.on('requestReplay', ({ gameId, userId }) => {
-    console.log(`requestReplay from ${userId} in ${gameId}`);
-    const game = activeGames[gameId];
-    if (!game) return;
-
-    // Mark user vote
-    game.replayVotes[userId] = true;
-
-    const [p1, p2] = game.players;
-    const other = (String(userId) === String(p1)) ? p2 : p1;
-
-    // If the other has also voted => reset
-    if (game.replayVotes[p1] && game.replayVotes[p2]) {
-      console.log('Both accepted replay => reset board');
-      game.board = Array(9).fill(null);
-      game.winner = null;
-      // keep currentTurn as is
-      game.replayVotes = {};
-      // Update
-      game.players.forEach(pid => {
-        if (onlineUsers[pid]) {
-          io.to(onlineUsers[pid].socketId).emit('updateGame', {
-            board: game.board,
-            currentTurn: game.currentTurn,
-            winner: game.winner
-          });
-        }
-      });
-    } else {
-      // Ask the other user
-      if (onlineUsers[other]) {
-        io.to(onlineUsers[other].socketId).emit('replayRequested', {
-          fromUser: userId
-        });
-      }
-    }
-  });
-
-  socket.on('acceptReplay', ({ gameId, userId }) => {
-    console.log(`acceptReplay from ${userId} in ${gameId}`);
-    const game = activeGames[gameId];
-    if (!game) return;
-
-    game.replayVotes[userId] = true;
-    const [p1, p2] = game.players;
-    if (game.replayVotes[p1] && game.replayVotes[p2]) {
-      // Reset
-      console.log('Both accepted replay => reset board');
-      game.board = Array(9).fill(null);
-      game.winner = null;
-      game.replayVotes = {};
-      // Update
-      game.players.forEach(pid => {
-        if (onlineUsers[pid]) {
-          io.to(onlineUsers[pid].socketId).emit('updateGame', {
-            board: game.board,
-            currentTurn: game.currentTurn,
-            winner: game.winner
-          });
-        }
-      });
-    }
-  });
-
-  socket.on('refuseReplay', ({ gameId, userId }) => {
-    console.log(`refuseReplay from ${userId} game ${gameId}`);
-    const game = activeGames[gameId];
-    if (!game) return;
-    game.replayVotes = {};
-    // Let the other user know
-    const [p1, p2] = game.players;
-    const other = (String(userId) === String(p1)) ? p2 : p1;
-    if (onlineUsers[other]) {
-      io.to(onlineUsers[other].socketId).emit('replayRefused', { byUser: userId });
-    }
-  });
-
-  // 8) Disconnect
-  socket.on('disconnect', () => {
-    const usr = Object.values(onlineUsers).find(u => u.socketId === socket.id);
-    if (usr) {
-      console.log('User disconnected:', usr.userName, usr.userId);
-      delete onlineUsers[usr.userId];
-      broadcastLobby();
-    }
-  });
-});
-
-// endGame => update stats => gameEnded
-function endGame(gameId) {
-  const game = activeGames[gameId];
-  if (!game) return;
-  const [p1, p2] = game.players;
-  const winner = game.winner;
-
-  Promise.all([
-    updateStats(p1, winner),
-    updateStats(p2, winner)
-  ]).then(() => {
-    game.players.forEach(uid => {
-      if (onlineUsers[uid]) {
-        onlineUsers[uid].inGame = false;
-        io.to(onlineUsers[uid].socketId).emit('gameEnded', { winner });
-      }
-    });
     delete activeGames[gameId];
-    broadcastLobby();
-  }).catch(err => console.error('endGame error:', err));
-}
-
-async function updateStats(userId, winner) {
-  if (!onlineUsers[userId]) return;
-  let isTie = (winner === 'tie');
-  let isWinner = (String(userId) === String(winner));
-  const lostFlag = (!isWinner && !isTie) ? 1 : 0;
-
-  const sql = `
-    UPDATE users
-    SET games_count = games_count + 1,
-        games_won   = games_won + IF(?,1,0),
-        games_lost  = games_lost+ IF(?,1,0)
-    WHERE id = ? OR telegram_id = ?
-  `;
-  await pool.query(sql, [isWinner, lostFlag, userId, userId]);
-}
-
-function broadcastLobby() {
-  const arr = Object.values(onlineUsers).map(u => ({
-    userId: u.userId,
-    displayName: u.userName,
-    inGame: u.inGame,
-    gamesCount: u.gamesCount,
-    gamesWon:   u.gamesWon,
-    gamesLost:  u.gamesLost
-  }));
-  io.emit('onlinePlayers', arr);
-}
-
-function checkWinner(board) {
-  const lines = [
-    [0,1,2],[3,4,5],[6,7,8],
-    [0,3,6],[1,4,7],[2,5,8],
-    [0,4,8],[2,4,6]
-  ];
-  for (const [a,b,c] of lines) {
-    if (board[a] && board[a] === board[b] && board[b] === board[c]) {
-      return board[a]; // 'X' or 'O'
-    }
-  }
-  return null;
-}
-
-const PORT = process.env.PORT || 3000;
-httpServer.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+    io.emit('onlinePlayers', Object.values(onlineUsers));
+  });
 });
+
+httpServer.listen(8080, () => console.log('Server running on port 8080'));
