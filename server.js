@@ -48,7 +48,8 @@ app.post('/auth', async (req, res) => {
             ON DUPLICATE KEY UPDATE user_name = VALUES(user_name)
         `;
         await pool.query(sql, [data.id, userName]);
-        res.send('Telegram login success');
+
+        res.json({ success: true, redirect: "/lobby" }); // Now responds with redirect URL
     } catch (err) {
         console.error('Telegram DB error:', err);
         res.status(500).send('DB error');
@@ -82,7 +83,11 @@ io.on('connection', (socket) => {
     // Player joins lobby
     socket.on('joinLobby', async ({ userId }) => {
         try {
-            const [rows] = await pool.query(`SELECT id, user_name, games_count, games_won, games_lost FROM users WHERE id = ?`, [userId]);
+            const [rows] = await pool.query(`
+                SELECT id, user_name, games_count, games_won, games_lost 
+                FROM users WHERE id = ?`, 
+                [userId]
+            );
 
             if (!rows.length) return socket.emit('errorMsg', 'User not found');
 
@@ -90,12 +95,14 @@ io.on('connection', (socket) => {
             onlineUsers[userId] = {
                 userId: user.id,
                 socketId: socket.id,
-                userName: user.user_name,
+                userName: user.user_name || `Guest_${user.id}`, // Ensures name is set
                 inGame: false,
                 gamesCount: user.games_count,
                 gamesWon: user.games_won,
                 gamesLost: user.games_lost
             };
+
+            console.log("Updated Online Users:", onlineUsers);
 
             io.emit('onlinePlayers', Object.values(onlineUsers));
         } catch (err) {
@@ -128,6 +135,10 @@ io.on('connection', (socket) => {
 
         const challenge = pendingChallenges[challengedId].shift();
         const { challengerId } = challenge;
+
+        if (!onlineUsers[challengerId] || !onlineUsers[challengedId]) {
+            return socket.emit('errorMsg', 'Opponent is no longer online.');
+        }
 
         const gameId = `game_${Date.now()}_${challengerId}_${challengedId}`;
         activeGames[gameId] = {
