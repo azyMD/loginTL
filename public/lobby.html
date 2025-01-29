@@ -2,19 +2,20 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="UTF-8">
   <title>TicTacToe Lobby</title>
-  <link rel="stylesheet" href="css/styles.css" />
+  <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
   <div class="container">
     <h1>TicTacToe Lobby</h1>
-    <table style="width:100%; border-collapse:collapse; margin-top:20px;">
+
+    <table id="players-table" style="width:100%; margin-top:20px; border-collapse: collapse;">
       <thead>
         <tr>
-          <th style="padding:8px; text-align:left;">Player</th>
-          <th style="padding:8px; text-align:left;">Games / Won / Lost</th>
-          <th style="padding:8px; text-align:left;">Action</th>
+          <th>Player</th>
+          <th>Games / Won / Lost</th>
+          <th>Action</th>
         </tr>
       </thead>
       <tbody id="players-body"></tbody>
@@ -36,38 +37,38 @@
       playersBody.innerHTML = '';
       players.forEach(p => {
         const row = document.createElement('tr');
-        const gc = p.gamesCount || 0, gw = p.gamesWon || 0, gl = p.gamesLost || 0;
 
-        // Name cell
+        const gc = p.gamesCount || 0;
+        const gw = p.gamesWon || 0;
+        const gl = p.gamesLost || 0;
+
+        // Player name
         const tdName = document.createElement('td');
-        tdName.style.padding='8px';
         tdName.textContent = p.displayName || `User#${p.userId}`;
         row.appendChild(tdName);
 
-        // Stats cell
+        // Stats
         const tdStats = document.createElement('td');
-        tdStats.style.padding='8px';
         tdStats.textContent = `${gc} / ${gw} / ${gl}`;
         row.appendChild(tdStats);
 
-        // Action cell
+        // Action
         const tdAction = document.createElement('td');
-        tdAction.style.padding='8px';
 
         if (String(p.userId) === String(userId)) {
           tdAction.textContent = "This is you";
         } else if (p.inGame) {
           tdAction.textContent = "In Game";
         } else {
-          const btn = document.createElement('button');
-          btn.textContent = "Send Challenge";
-          btn.onclick = () => {
+          const challengeBtn = document.createElement('button');
+          challengeBtn.textContent = "Send Challenge";
+          challengeBtn.onclick = () => {
             socket.emit('sendChallenge', {
               challengerId: userId,
               challengedId: p.userId
             });
           };
-          tdAction.appendChild(btn);
+          tdAction.appendChild(challengeBtn);
         }
         row.appendChild(tdAction);
 
