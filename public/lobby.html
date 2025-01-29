@@ -9,8 +9,7 @@
 <body>
   <div class="container">
     <h1>TicTacToe Lobby</h1>
-
-    <table id="players-table" style="width:100%; margin-top:20px; border-collapse: collapse;">
+    <table style="width:100%; border-collapse:collapse; margin-top:20px;">
       <thead>
         <tr>
           <th style="padding:8px; text-align:left;">Player</th>
@@ -25,55 +24,50 @@
   <script src="/socket.io/socket.io.js"></script>
   <script>
     const socket = io();
-    const playersBody = document.getElementById('players-body');
-
     const params = new URLSearchParams(window.location.search);
     const userId = params.get('userId');
+    const playersBody = document.getElementById('players-body');
 
     // Join lobby
     socket.emit('joinLobby', { userId });
 
-    // Show players
+    // Display players
     socket.on('onlinePlayers', (players) => {
       playersBody.innerHTML = '';
       players.forEach(p => {
         const row = document.createElement('tr');
+        const gc = p.gamesCount || 0, gw = p.gamesWon || 0, gl = p.gamesLost || 0;
 
-        // Stats fallback
-        const gc = p.gamesCount || 0;
-        const gw = p.gamesWon   || 0;
-        const gl = p.gamesLost  || 0;
-
-        // 1) Name
+        // Name cell
         const tdName = document.createElement('td');
-        tdName.style.padding = '8px';
+        tdName.style.padding='8px';
         tdName.textContent = p.displayName || `User#${p.userId}`;
         row.appendChild(tdName);
 
-        // 2) Stats
+        // Stats cell
         const tdStats = document.createElement('td');
-        tdStats.style.padding = '8px';
+        tdStats.style.padding='8px';
         tdStats.textContent = `${gc} / ${gw} / ${gl}`;
         row.appendChild(tdStats);
 
-        // 3) Action
+        // Action cell
         const tdAction = document.createElement('td');
-        tdAction.style.padding = '8px';
+        tdAction.style.padding='8px';
 
         if (String(p.userId) === String(userId)) {
           tdAction.textContent = "This is you";
         } else if (p.inGame) {
           tdAction.textContent = "In Game";
         } else {
-          const challengeBtn = document.createElement('button');
-          challengeBtn.textContent = "Send Challenge";
-          challengeBtn.onclick = () => {
+          const btn = document.createElement('button');
+          btn.textContent = "Send Challenge";
+          btn.onclick = () => {
             socket.emit('sendChallenge', {
               challengerId: userId,
               challengedId: p.userId
             });
           };
-          tdAction.appendChild(challengeBtn);
+          tdAction.appendChild(btn);
         }
         row.appendChild(tdAction);
 
@@ -81,6 +75,7 @@
       });
     });
 
+    // Start the game => go to game
     socket.on('gameStarted', ({ gameId, opponentId }) => {
       window.location.href = `/game.html?gameId=${gameId}&userId=${userId}&opponentId=${opponentId}`;
     });
@@ -89,16 +84,17 @@
       alert(msg);
     });
 
-    // Challenge received => confirm
+    // Challenge received => accept or refuse
     socket.on('challengeReceived', ({ fromId, fromName }) => {
-      const accept = confirm(`Player "${fromName}" is challenging you. Accept?`);
-      if (accept) {
+      const yes = confirm(`Player "${fromName}" is challenging you. Accept?`);
+      if (yes) {
         socket.emit('acceptChallenge', { challengedId: userId });
       } else {
         socket.emit('refuseChallenge', { challengedId: userId });
       }
     });
 
+    // If we challenged someone, but they refused
     socket.on('challengeRefused', ({ refusedBy }) => {
       alert(`Your challenge was refused by user ${refusedBy}`);
     });
