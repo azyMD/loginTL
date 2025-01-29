@@ -9,14 +9,9 @@
 <body>
   <div class="container">
     <h1>TicTacToe - Match</h1>
-    
-    <!-- Turn / Winner info -->
     <div id="status"></div>
-
-    <!-- 3x3 board -->
     <div id="board"></div>
 
-    <!-- Replay & Quit -->
     <div style="margin-top:15px;">
       <button id="replay-btn">Replay</button>
       <button id="quit-btn" style="margin-left:10px;">Quit</button>
@@ -37,14 +32,14 @@
     const replayBtn  = document.getElementById('replay-btn');
     const quitBtn    = document.getElementById('quit-btn');
 
-    console.log("Game =>", gameId, "User =>", userId, "Opponent =>", opponentId);
-
-    // Build 3x3
+    // Build the 3x3 board
     for (let i = 0; i < 9; i++) {
       const cell = document.createElement('div');
       cell.dataset.index = i;
       cell.addEventListener('click', () => {
-        socket.emit('makeMove', { gameId, userId, cellIndex: i });
+        socket.emit('makeMove', {
+          gameId, userId, cellIndex: i
+        });
       });
       boardEl.appendChild(cell);
     }
@@ -55,7 +50,7 @@
       renderStatus(currentTurn, winner);
     });
 
-    // If game ended => go back to lobby
+    // If game ends => we see a winner or tie
     socket.on('gameEnded', ({ winner }) => {
       if (winner === 'tie') {
         alert("It’s a tie!");
@@ -64,20 +59,21 @@
       } else {
         alert("Opponent won!");
       }
+      // Back to lobby
       window.location.href = `/lobby.html?userId=${userId}`;
     });
 
-    // Replay => 2-step approach
+    // Replay => ask user if they want to replay => must also be accepted by the other user
     replayBtn.addEventListener('click', () => {
-      const confirmReplay = confirm("Do you want to propose a Replay? Both must accept.");
+      const confirmReplay = confirm("Propose a replay? Both must accept.");
       if (confirmReplay) {
         socket.emit('requestReplay', { gameId, userId });
       }
     });
 
-    // The other user requests replay => ask this user
+    // If the other user requests replay => ask me
     socket.on('replayRequested', ({ fromUser }) => {
-      const yes = confirm(`User ${fromUser} wants to replay. Accept?`);
+      const yes = confirm(`User ${fromUser} wants a replay. Accept?`);
       if (yes) {
         socket.emit('acceptReplay', { gameId, userId });
       } else {
@@ -86,7 +82,7 @@
     });
 
     socket.on('replayRefused', ({ byUser }) => {
-      alert(`Replay refused by user ${byUser}`);
+      alert(`Replay refused by user: ${byUser}`);
     });
 
     // Quit => forfeit
@@ -112,7 +108,7 @@
           statusEl.textContent = "Opponent Won!";
         }
       } else {
-        // No winner => whose turn?
+        // Show turn
         if (String(currentTurn) === String(userId)) {
           statusEl.textContent = "Your turn...";
         } else {
@@ -120,6 +116,11 @@
         }
       }
     }
+
+    // Also handle new "gameStarted" if some replay code forcibly re-challenges
+    socket.on('gameStarted', ({ gameId: newId, opponentId: newOpp }) => {
+      window.location.href = `/game.html?gameId=${newId}&userId=${userId}&opponentId=${newOpp}`;
+    });
   </script>
 </body>
 </html>
