@@ -1,6 +1,6 @@
-/* public/css/styles.css */
+/* styles.css */
 
-/* Global Reset & Typography */
+/* Global Reset & Font */
 * {
   margin: 0;
   padding: 0;
@@ -8,82 +8,60 @@
 }
 body {
   font-family: "Inter", Arial, sans-serif;
-  background: linear-gradient(135deg, #f5f6fa 0%, #dfe9f3 100%);
+  background: #f5f6fa;
   color: #333;
-  line-height: 1.6;
 }
 
-/* Container with a modern card style */
+/* Container with a card-like style */
 .container {
   width: 90%;
   max-width: 700px;
-  margin: 50px auto;
-  padding: 30px;
+  margin: 40px auto;
+  padding: 20px;
   background: #fff;
-  border-radius: 16px;
-  box-shadow: 0 8px 20px rgba(0,0,0,0.1);
-  animation: fadeIn 0.3s ease;
-}
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(20px); }
-  to { opacity: 1; transform: translateY(0); }
+  border-radius: 12px;
+  box-shadow: 0 6px 16px rgba(0,0,0,0.1);
 }
 
 /* Headings */
 h1 {
   margin-bottom: 20px;
-  font-size: 2rem;
-}
-h2 {
-  margin-bottom: 15px;
-  font-size: 1.5rem;
 }
 
 /* Buttons */
 button {
   display: inline-block;
-  padding: 10px 18px;
+  padding: 10px 16px;
   margin: 6px 0;
   background: #5468ff;
   color: #fff;
   border: none;
   border-radius: 8px;
   cursor: pointer;
-  transition: background 0.2s ease, transform 0.1s;
+  transition: background 0.2s ease;
 }
 button:hover {
   background: #4052c7;
-  transform: scale(1.02);
 }
 
-/* Inputs */
-input[type="text"] {
-  padding: 10px;
+/* Table & Lobby */
+table {
   width: 100%;
-  max-width: 300px;
-  margin: 8px 0 16px;
-  border: 1px solid #ccc;
-  border-radius: 8px;
+  border-collapse: collapse;
 }
-
-/* Lobby Player List */
-#players-list {
-  list-style-type: none;
-  margin: 20px 0;
+table th, table td {
+  border-bottom: 1px solid #ccc;
+  padding: 8px;
 }
-#players-list li {
-  margin-bottom: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+table tr:last-child td {
+  border-bottom: none;
 }
 
 /* TicTacToe Board */
 #board {
   display: grid;
   grid-template-columns: repeat(3, 80px);
-  gap: 8px;
-  margin-bottom: 20px;
+  gap: 5px;
 }
 #board div {
   width: 80px;
@@ -92,32 +70,17 @@ input[type="text"] {
   text-align: center;
   line-height: 80px;
   border: 2px solid #ddd;
-  border-radius: 12px;
+  border-radius: 6px;
   background: #fafafa;
-  transition: background 0.1s, transform 0.1s;
+  transition: background 0.1s;
   cursor: pointer;
 }
 #board div:hover {
   background: #f0f0f0;
-  transform: scale(1.03);
 }
 
-/* Status & Misc */
+/* Status */
 #status {
-  margin-bottom: 20px;
-  font-weight: 600;
-}
-.errorMsg {
-  background: #ffe3e3;
-  color: #cf2f2f;
-  padding: 10px;
-  margin-bottom: 10px;
-  border-radius: 8px;
-  animation: shake 0.3s ease;
-}
-@keyframes shake {
-  0%, 100% { transform: translateX(0); }
-  25% { transform: translateX(-2px); }
-  50% { transform: translateX(2px); }
-  75% { transform: translateX(-2px); }
+  margin-bottom: 15px;
+  font-weight: bold;
 }
