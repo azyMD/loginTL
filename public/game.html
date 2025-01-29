@@ -9,10 +9,14 @@
 <body>
   <div class="container">
     <h1>TicTacToe - Match</h1>
-
+    
+    <!-- Turn / Winner info -->
     <div id="status"></div>
+
+    <!-- 3x3 board -->
     <div id="board"></div>
 
+    <!-- Replay & Quit -->
     <div style="margin-top:15px;">
       <button id="replay-btn">Replay</button>
       <button id="quit-btn" style="margin-left:10px;">Quit</button>
@@ -21,46 +25,38 @@
 
   <script src="/socket.io/socket.io.js"></script>
   <script>
-    console.log("Game page loaded!");
-    const socket    = io();
+    const socket = io();
 
-    // DOM
-    const boardEl   = document.getElementById('board');
-    const statusEl  = document.getElementById('status');
-    const replayBtn = document.getElementById('replay-btn');
-    const quitBtn   = document.getElementById('quit-btn');
+    const params     = new URLSearchParams(window.location.search);
+    const gameId     = params.get('gameId');
+    const userId     = params.get('userId');
+    const opponentId = params.get('opponentId');
 
-    const params    = new URLSearchParams(window.location.search);
-    const gameId    = params.get('gameId');
-    const userId    = params.get('userId');
-    const opponentId= params.get('opponentId');
+    const statusEl   = document.getElementById('status');
+    const boardEl    = document.getElementById('board');
+    const replayBtn  = document.getElementById('replay-btn');
+    const quitBtn    = document.getElementById('quit-btn');
 
-    console.log("Game:", gameId, "User:", userId, "Opponent:", opponentId);
+    console.log("Game =>", gameId, "User =>", userId, "Opponent =>", opponentId);
 
-    // Build 3x3 board
+    // Build 3x3
     for (let i = 0; i < 9; i++) {
       const cell = document.createElement('div');
       cell.dataset.index = i;
       cell.addEventListener('click', () => {
-        console.log("Cell click:", i);
-        makeMove(i);
+        socket.emit('makeMove', { gameId, userId, cellIndex: i });
       });
       boardEl.appendChild(cell);
     }
 
-    function makeMove(cellIndex) {
-      socket.emit('makeMove', { gameId, userId, cellIndex });
-    }
-
-    // Listen for updates
+    // Update from server
     socket.on('updateGame', ({ board, currentTurn, winner }) => {
-      console.log("updateGame =>", board, currentTurn, winner);
       renderBoard(board);
       renderStatus(currentTurn, winner);
     });
 
+    // If game ended => go back to lobby
     socket.on('gameEnded', ({ winner }) => {
-      console.log("gameEnded => winner:", winner);
       if (winner === 'tie') {
         alert("It’s a tie!");
       } else if (String(winner) === String(userId)) {
@@ -71,25 +67,31 @@
       window.location.href = `/lobby.html?userId=${userId}`;
     });
 
-    // Replay => re-challenge same opponent
+    // Replay => 2-step approach
     replayBtn.addEventListener('click', () => {
-      console.log("Replay => sending challenge to", opponentId);
-      socket.emit('sendChallenge', {
-        challengerId: userId,
-        challengedId: opponentId
-      });
+      const confirmReplay = confirm("Do you want to propose a Replay? Both must accept.");
+      if (confirmReplay) {
+        socket.emit('requestReplay', { gameId, userId });
+      }
+    });
+
+    // The other user requests replay => ask this user
+    socket.on('replayRequested', ({ fromUser }) => {
+      const yes = confirm(`User ${fromUser} wants to replay. Accept?`);
+      if (yes) {
+        socket.emit('acceptReplay', { gameId, userId });
+      } else {
+        socket.emit('refuseReplay', { gameId, userId });
+      }
+    });
+
+    socket.on('replayRefused', ({ byUser }) => {
+      alert(`Replay refused by user ${byUser}`);
     });
 
     // Quit => forfeit
     quitBtn.addEventListener('click', () => {
-      console.log("Quit => forfeit game", gameId);
       socket.emit('quitGame', { gameId, userId });
-    });
-
-    // If new game started after replay is accepted
-    socket.on('gameStarted', ({ gameId: newId, opponentId: newOpp }) => {
-      console.log("New game started =>", newId, newOpp);
-      window.location.href = `/game.html?gameId=${newId}&userId=${userId}&opponentId=${newOpp}`;
     });
 
     // Helpers
@@ -99,6 +101,7 @@
         cells[i].textContent = board[i] || '';
       }
     }
+
     function renderStatus(currentTurn, winner) {
       if (winner === 'tie') {
         statusEl.textContent = "It’s a tie!";
@@ -109,6 +112,7 @@
           statusEl.textContent = "Opponent Won!";
         }
       } else {
+        // No winner => whose turn?
         if (String(currentTurn) === String(userId)) {
           statusEl.textContent = "Your turn...";
         } else {
