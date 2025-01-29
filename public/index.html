@@ -3,27 +3,24 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Login to TicTacToe</title>
+  <title>TicTacToe Login</title>
   <link rel="stylesheet" href="css/styles.css" />
 </head>
 <body>
   <div class="container">
     <h1>TicTacToe Login</h1>
 
-    <p>Choose a login method:</p>
-
-    <!-- Incognito -->
-    <button id="btn-incognito">Incognito</button>
-    <div id="incognito-form" style="display:none;">
-      <input type="text" id="incognito-username" placeholder="Enter username" />
-      <button id="incognito-submit">GO</button>
+    <button id="btn-incog">Incognito</button>
+    <div id="incog-form" style="display:none;">
+      <input type="text" id="incog-username" placeholder="Your username" />
+      <button id="incog-submit">Go</button>
     </div>
 
-    <!-- Telegram Widget -->
+    <!-- Telegram Login Widget -->
     <script
       async
       src="https://telegram.org/js/telegram-widget.js?22"
-      data-telegram-login="logintl_bot"  
+      data-telegram-login="logintl_bot"
       data-size="large"
       data-onauth="onTelegramAuth(user)"
       data-request-access="write">
@@ -31,45 +28,44 @@
   </div>
 
   <script>
-    const btnIncognito = document.getElementById('btn-incognito');
-    const incogForm    = document.getElementById('incognito-form');
-    const incogInput   = document.getElementById('incognito-username');
-    const incogSubmit  = document.getElementById('incognito-submit');
+    const incogBtn  = document.getElementById('btn-incog');
+    const incogForm = document.getElementById('incog-form');
+    const incogUser = document.getElementById('incog-username');
+    const incogSub  = document.getElementById('incog-submit');
 
-    btnIncognito.addEventListener('click', () => {
+    incogBtn.addEventListener('click', () => {
       incogForm.style.display = 'block';
     });
 
-    // incognito => /incognito => redirect to /lobby
-    incogSubmit.addEventListener('click', async () => {
-      const username = incogInput.value.trim();
+    incogSub.addEventListener('click', async () => {
+      const username = incogUser.value.trim();
       if (!username) {
         alert("Please enter a username");
         return;
       }
       try {
         const res = await fetch('/incognito', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          method:'POST',
+          headers:{ 'Content-Type':'application/json' },
           body: JSON.stringify({ username })
         });
         if (!res.ok) {
-          alert(await res.text());
+          alert("Incognito error: " + (await res.text()));
           return;
         }
         const data = await res.json();
         window.location.href = `/lobby.html?userId=${data.userId}`;
       } catch (err) {
-        alert("Error logging in incognito");
+        alert("Incognito login request failed");
         console.error(err);
       }
     });
 
-    // Telegram => /auth => redirect to /lobby
+    // Called by Telegram widget upon success
     function onTelegramAuth(user) {
       fetch('/auth', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method:'POST',
+        headers:{ 'Content-Type':'application/json' },
         body: JSON.stringify(user)
       })
       .then(async (res) => {
@@ -77,7 +73,7 @@
           alert(await res.text());
           return;
         }
-        // success => redirect
+        // success => user.id => go lobby
         window.location.href = `/lobby.html?userId=${user.id}`;
       })
       .catch(err => {
