@@ -30,7 +30,7 @@
     const params = new URLSearchParams(window.location.search);
     const userId = params.get('userId');
 
-    // Join the lobby
+    // Join lobby
     socket.emit('joinLobby', { userId });
 
     // Show players
@@ -39,23 +39,24 @@
       players.forEach(p => {
         const row = document.createElement('tr');
 
-        const gamesCount = p.gamesCount || 0;
-        const gamesWon   = p.gamesWon   || 0;
-        const gamesLost  = p.gamesLost  || 0;
+        // Stats fallback
+        const gc = p.gamesCount || 0;
+        const gw = p.gamesWon   || 0;
+        const gl = p.gamesLost  || 0;
 
-        // Player name
+        // 1) Name
         const tdName = document.createElement('td');
         tdName.style.padding = '8px';
-        tdName.textContent = p.displayName || "User??";
+        tdName.textContent = p.displayName || `User#${p.userId}`;
         row.appendChild(tdName);
 
-        // Stats
+        // 2) Stats
         const tdStats = document.createElement('td');
         tdStats.style.padding = '8px';
-        tdStats.textContent = `${gamesCount} / ${gamesWon} / ${gamesLost}`;
+        tdStats.textContent = `${gc} / ${gw} / ${gl}`;
         row.appendChild(tdStats);
 
-        // Action
+        // 3) Action
         const tdAction = document.createElement('td');
         tdAction.style.padding = '8px';
 
@@ -64,34 +65,31 @@
         } else if (p.inGame) {
           tdAction.textContent = "In Game";
         } else {
-          // Send Challenge
-          const btn = document.createElement('button');
-          btn.textContent = "Send Challenge";
-          btn.onclick = () => {
+          const challengeBtn = document.createElement('button');
+          challengeBtn.textContent = "Send Challenge";
+          challengeBtn.onclick = () => {
             socket.emit('sendChallenge', {
               challengerId: userId,
               challengedId: p.userId
             });
           };
-          tdAction.appendChild(btn);
+          tdAction.appendChild(challengeBtn);
         }
-
         row.appendChild(tdAction);
+
         playersBody.appendChild(row);
       });
     });
 
-    // Game started => move to game page
     socket.on('gameStarted', ({ gameId, opponentId }) => {
       window.location.href = `/game.html?gameId=${gameId}&userId=${userId}&opponentId=${opponentId}`;
     });
 
-    // Any error
     socket.on('errorMsg', (msg) => {
       alert(msg);
     });
 
-    // Challenge received => accept/refuse
+    // Challenge received => confirm
     socket.on('challengeReceived', ({ fromId, fromName }) => {
       const accept = confirm(`Player "${fromName}" is challenging you. Accept?`);
       if (accept) {
@@ -101,9 +99,8 @@
       }
     });
 
-    // If your challenge was refused
     socket.on('challengeRefused', ({ refusedBy }) => {
-      alert(`Your challenge was refused by user: ${refusedBy}`);
+      alert(`Your challenge was refused by user ${refusedBy}`);
     });
   </script>
 </body>
