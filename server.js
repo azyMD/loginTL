@@ -44,14 +44,14 @@ app.post('/auth', async (req, res) => {
     return res.status(403).send('Invalid Telegram hash');
   }
 
-  // Insert or update user => user_name from data.username or fallback
+  // Insert or update user => username from data.username or fallback
   try {
     const userName = data.username || data.first_name || `TG#${data.id}`;
     const sql = `
-      INSERT INTO users (telegram_id, user_name, is_incognito)
+      INSERT INTO users (telegram_id, username, is_incognito)
       VALUES (?, ?, 0)
       ON DUPLICATE KEY UPDATE
-        user_name = VALUES(user_name)
+        username = VALUES(username)
     `;
     await pool.query(sql, [data.id, userName]);
     res.send('Telegram login success');
@@ -67,7 +67,7 @@ app.post('/incognito', async (req, res) => {
   if (!username) return res.status(400).send('No username');
 
   try {
-    const sql = `INSERT INTO users (user_name, is_incognito) VALUES (?, 1)`;
+    const sql = `INSERT INTO users (username, is_incognito) VALUES (?, 1)`;
     const [result] = await pool.query(sql, [username]);
     const userId = result.insertId;
     res.json({ success: true, userId });
@@ -94,7 +94,7 @@ io.on('connection', (socket) => {
     try {
       // Load user from DB
       const [rows] = await pool.query(`
-        SELECT id, telegram_id, user_name, is_incognito,
+        SELECT id, telegram_id, username, is_incognito,
                games_count, games_won, games_lost
         FROM users
         WHERE id = ? OR telegram_id = ?
@@ -110,7 +110,7 @@ io.on('connection', (socket) => {
       onlineUsers[dbUser.id] = {
         userId: dbUser.id,
         socketId: socket.id,
-        userName: dbUser.user_name,
+        userName: dbUser.username,
         inGame: false,
         gamesCount: dbUser.games_count || 0,
         gamesWon:   dbUser.games_won   || 0,
