@@ -10,7 +10,7 @@
   <div class="container">
     <h1>TicTacToe Lobby</h1>
 
-    <table id="players-table" style="width:100%; border-collapse:collapse; margin-top:20px;">
+    <table id="players-table" style="width:100%; margin-top:20px; border-collapse: collapse;">
       <thead>
         <tr>
           <th style="padding:8px; text-align:left;">Player</th>
@@ -24,41 +24,39 @@
 
   <script src="/socket.io/socket.io.js"></script>
   <script>
-    const socket      = io();
+    const socket = io();
     const playersBody = document.getElementById('players-body');
 
-    // Grab userId from query
     const params = new URLSearchParams(window.location.search);
     const userId = params.get('userId');
 
-    // Join lobby
+    // Join the lobby
     socket.emit('joinLobby', { userId });
 
-    // Listen for player updates
+    // Show players
     socket.on('onlinePlayers', (players) => {
       playersBody.innerHTML = '';
       players.forEach(p => {
-        let row = document.createElement('tr');
+        const row = document.createElement('tr');
 
-        // Fallback stats
-        let gamesCount = p.gamesCount || 0;
-        let gamesWon   = p.gamesWon   || 0;
-        let gamesLost  = p.gamesLost  || 0;
+        const gamesCount = p.gamesCount || 0;
+        const gamesWon   = p.gamesWon   || 0;
+        const gamesLost  = p.gamesLost  || 0;
 
-        // 1) Name cell
-        let tdName = document.createElement('td');
+        // Player name
+        const tdName = document.createElement('td');
         tdName.style.padding = '8px';
-        tdName.textContent = p.displayName || "UnknownUser";
+        tdName.textContent = p.displayName || "User??";
         row.appendChild(tdName);
 
-        // 2) Stats cell
-        let tdStats = document.createElement('td');
+        // Stats
+        const tdStats = document.createElement('td');
         tdStats.style.padding = '8px';
         tdStats.textContent = `${gamesCount} / ${gamesWon} / ${gamesLost}`;
         row.appendChild(tdStats);
 
-        // 3) Action cell
-        let tdAction = document.createElement('td');
+        // Action
+        const tdAction = document.createElement('td');
         tdAction.style.padding = '8px';
 
         if (String(p.userId) === String(userId)) {
@@ -66,37 +64,36 @@
         } else if (p.inGame) {
           tdAction.textContent = "In Game";
         } else {
-          // Send Challenge button
-          let btnChallenge = document.createElement('button');
-          btnChallenge.textContent = "Send Challenge";
-          btnChallenge.onclick = () => {
+          // Send Challenge
+          const btn = document.createElement('button');
+          btn.textContent = "Send Challenge";
+          btn.onclick = () => {
             socket.emit('sendChallenge', {
               challengerId: userId,
               challengedId: p.userId
             });
           };
-          tdAction.appendChild(btnChallenge);
+          tdAction.appendChild(btn);
         }
-        row.appendChild(tdAction);
 
+        row.appendChild(tdAction);
         playersBody.appendChild(row);
       });
     });
 
-    // If a game starts => go to the new game
+    // Game started => move to game page
     socket.on('gameStarted', ({ gameId, opponentId }) => {
       window.location.href = `/game.html?gameId=${gameId}&userId=${userId}&opponentId=${opponentId}`;
     });
 
-    // If we get an error
+    // Any error
     socket.on('errorMsg', (msg) => {
       alert(msg);
     });
 
-    // =========== CHALLENGE FLOW ===========
-    // We receive a challenge from another user
+    // Challenge received => accept/refuse
     socket.on('challengeReceived', ({ fromId, fromName }) => {
-      let accept = confirm(`Player "${fromName}" is challenging you. Accept?`);
+      const accept = confirm(`Player "${fromName}" is challenging you. Accept?`);
       if (accept) {
         socket.emit('acceptChallenge', { challengedId: userId });
       } else {
@@ -104,9 +101,9 @@
       }
     });
 
-    // If the challenger sees the challenge was refused
+    // If your challenge was refused
     socket.on('challengeRefused', ({ refusedBy }) => {
-      alert(`Your challenge was refused by user ${refusedBy}.`);
+      alert(`Your challenge was refused by user: ${refusedBy}`);
     });
   </script>
 </body>
