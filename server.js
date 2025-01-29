@@ -17,40 +17,38 @@ const io = new Server(httpServer);
 app.use(express.static('public'));
 app.use(bodyParser.json());
 
-/** In-memory maps */
-let onlineUsers = {};         // userId -> { userId, socketId, name, inGame, gamesCount, gamesWon, gamesLost }
-let activeGames = {};         // gameId -> { players:[], board:[], currentTurn, winner }
+// In-memory data
+let onlineUsers = {};         // userId -> { userId, socketId, name, inGame, stats... }
+let activeGames = {};         // gameId -> { players:[p1,p2], board:[...], currentTurn, winner, replayVotes:{} }
 let pendingChallenges = {};   // challengedId -> { challengerId, challengedId, time }
 
-// ========== TELEGRAM AUTH: sets incognito_name = userData.username so no NULL name. ==========
+// ========== TELEGRAM AUTH (Sets incognito_name = username) ==========
 app.post('/auth', async (req, res) => {
-  const userData = req.body; // { id, first_name, last_name, username, hash, ... }
-  if (!userData.id || !userData.hash) {
+  const user = req.body; // { id, first_name, last_name, username, hash, ... }
+  if (!user.id || !user.hash) {
     return res.status(400).send('Missing Telegram data');
   }
-
   const BOT_TOKEN = process.env.BOT_TOKEN;
-  if (!BOT_TOKEN) return res.status(500).send('Server missing BOT_TOKEN');
+  if (!BOT_TOKEN) return res.status(500).send('No BOT_TOKEN in .env');
 
   // Validate hash
   const secretKey = crypto.createHash('sha256').update(BOT_TOKEN).digest();
-  const checkString = Object.keys(userData)
+  const checkString = Object.keys(user)
     .filter(k => k !== 'hash')
     .sort()
-    .map(k => `${k}=${userData[k]}`)
+    .map(k => `${k}=${user[k]}`)
     .join('\n');
+
   const hmac = crypto.createHmac('sha256', secretKey).update(checkString).digest('hex');
-  if (hmac !== userData.hash) {
-    return res.status(403).send('Unauthorized: invalid telegram hash');
+  if (hmac !== user.hash) {
+    return res.status(403).send('Unauthorized: Invalid Telegram hash');
   }
 
-  // Insert or update user
+  // Insert/update user => incognito_name = username so never null
   try {
+    const incogName = user.username || user.first_name || `TGUser#${user.id}`;
     const sql = `
-      INSERT INTO users (
-        telegram_id, first_name, last_name, username,
-        incognito_name, is_incognito
-      )
+      INSERT INTO users (telegram_id, first_name, last_name, username, incognito_name, is_incognito)
       VALUES (?, ?, ?, ?, ?, 0)
       ON DUPLICATE KEY UPDATE
         first_name = VALUES(first_name),
@@ -58,15 +56,13 @@ app.post('/auth', async (req, res) => {
         username   = VALUES(username),
         incognito_name = VALUES(incognito_name)
     `;
-    const incogName = userData.username || userData.first_name || `TGUser#${userData.id}`;
     await pool.query(sql, [
-      userData.id,
-      userData.first_name || '',
-      userData.last_name  || '',
-      userData.username   || '',
-      incogName           // ensure telegram player also has incognito_name
+      user.id,
+      user.first_name || '',
+      user.last_name  || '',
+      user.username   || '',
+      incogName
     ]);
-
     res.send('Telegram login success');
   } catch (err) {
     console.error('DB Insert Error:', err);
@@ -77,23 +73,20 @@ app.post('/auth', async (req, res) => {
 // ========== INCOGNITO LOGIN ==========
 app.post('/incognito', async (req, res) => {
   const { username } = req.body;
-  if (!username) return res.status(400).send('Username required');
+  if (!username) return res.status(400).send('Missing username');
 
   try {
-    const sql = `
-      INSERT INTO users (incognito_name, is_incognito)
-      VALUES (?, 1)
-    `;
+    const sql = `INSERT INTO users (incognito_name, is_incognito) VALUES (?, 1)`;
     const [result] = await pool.query(sql, [username]);
     const userId = result.insertId;
-    res.json({ success: true, userId, username });
+    res.json({ success: true, userId });
   } catch (err) {
     console.error('Incognito DB error:', err);
     res.status(500).send('Error creating incognito user');
   }
 });
 
-// Serve lobby/game if needed
+// Serve static pages if needed
 app.get('/lobby', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'lobby.html'));
 });
@@ -101,45 +94,39 @@ app.get('/game', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'game.html'));
 });
 
-// Memory + Socket events
+// ========== Socket.io Logic ==========
 
 io.on('connection', (socket) => {
-  console.log('New socket connected:', socket.id);
+  console.log('New socket:', socket.id);
 
-  // =========== JOIN LOBBY ===========
+  // 1) Join lobby => fetch user from DB, store in onlineUsers
   socket.on('joinLobby', async ({ userId }) => {
     try {
       const [rows] = await pool.query(`
-        SELECT id, telegram_id, first_name, last_name, username,
-               incognito_name, is_incognito, games_count, games_won, games_lost
+        SELECT id, telegram_id, incognito_name, is_incognito,
+               games_count, games_won, games_lost
         FROM users
         WHERE id = ? OR telegram_id = ?
       `, [userId, userId]);
 
       if (!rows.length) {
-        console.log('User not found in DB for userId:', userId);
+        console.log('User not found in DB:', userId);
         return socket.emit('errorMsg', 'User not found');
       }
-      const user = rows[0];
+      const dbUser = rows[0];
 
-      // Build fallback name from incognito_name
-      // Because incognito_name now holds the username if Telegram user
-      let displayName = user.incognito_name ||
-                        user.username ||
-                        user.first_name ||
-                        `User#${user.id}`;
+      let name = dbUser.incognito_name || `User#${dbUser.id}`;
 
-      onlineUsers[user.id] = {
-        userId: user.id,
+      onlineUsers[dbUser.id] = {
+        userId: dbUser.id,
         socketId: socket.id,
-        name: displayName,
+        name,
         inGame: false,
-        gamesCount: user.games_count || 0,
-        gamesWon:   user.games_won   || 0,
-        gamesLost:  user.games_lost  || 0
+        gamesCount: dbUser.games_count || 0,
+        gamesWon:   dbUser.games_won   || 0,
+        gamesLost:  dbUser.games_lost  || 0
       };
 
-      console.log('User joined lobby:', displayName, '(ID:', user.id, ')');
       broadcastLobby();
     } catch (err) {
       console.error('joinLobby error:', err);
@@ -147,58 +134,51 @@ io.on('connection', (socket) => {
     }
   });
 
-  // =========== SEND CHALLENGE ===========
+  // 2) Send Challenge => store pending challenge
   socket.on('sendChallenge', ({ challengerId, challengedId }) => {
     console.log(`sendChallenge from ${challengerId} to ${challengedId}`);
-
-    // Validate both users
     if (!onlineUsers[challengerId] || !onlineUsers[challengedId]) {
-      return socket.emit('errorMsg', 'User is offline or not found.');
+      return socket.emit('errorMsg', 'User offline or not found');
     }
     if (onlineUsers[challengedId].inGame) {
-      return socket.emit('errorMsg', 'That user is currently in a game.');
+      return socket.emit('errorMsg', 'That user is already in a game');
     }
-
-    // Store a pending challenge
+    // Store pending
     pendingChallenges[challengedId] = {
       challengerId,
       challengedId,
       time: Date.now()
     };
-
-    // Notify the challenged user
+    // Notify challenged user
     io.to(onlineUsers[challengedId].socketId).emit('challengeReceived', {
       fromId: challengerId,
       fromName: onlineUsers[challengerId].name
     });
   });
 
-  // =========== ACCEPT CHALLENGE ===========
+  // 3) Accept Challenge => create a new game
   socket.on('acceptChallenge', ({ challengedId }) => {
-    // Retrieve the pending challenge
     const challenge = pendingChallenges[challengedId];
     if (!challenge) {
-      return socket.emit('errorMsg', 'No challenge found to accept.');
+      return socket.emit('errorMsg', 'No challenge found to accept');
     }
     const { challengerId } = challenge;
     delete pendingChallenges[challengedId];
 
-    console.log('User', challengedId, 'accepted challenge from', challengerId);
-
-    // Create a new game
     const gameId = `game_${Date.now()}_${challengerId}_${challengedId}`;
     activeGames[gameId] = {
       players: [challengerId, challengedId],
       board: Array(9).fill(null),
       currentTurn: challengerId,
-      winner: null
+      winner: null,
+      replayVotes: {}
     };
-
-    // Mark them inGame
     if (onlineUsers[challengerId]) onlineUsers[challengerId].inGame = true;
     if (onlineUsers[challengedId]) onlineUsers[challengedId].inGame = true;
 
-    // Emit gameStarted to both
+    console.log('Challenge accepted => new game:', gameId);
+
+    // Notify both
     if (onlineUsers[challengerId]) {
       io.to(onlineUsers[challengerId].socketId).emit('gameStarted', {
         gameId,
@@ -211,18 +191,17 @@ io.on('connection', (socket) => {
         opponentId: challengerId
       });
     }
+
     broadcastLobby();
   });
 
-  // =========== REFUSE CHALLENGE ===========
+  // 4) Refuse Challenge
   socket.on('refuseChallenge', ({ challengedId }) => {
-    const challenge = pendingChallenges[challengedId];
-    if (!challenge) return;
-    const { challengerId } = challenge;
+    const ch = pendingChallenges[challengedId];
+    if (!ch) return;
     delete pendingChallenges[challengedId];
-
+    const { challengerId } = ch;
     console.log(`User ${challengedId} refused challenge from ${challengerId}`);
-    // Notify challenger
     if (onlineUsers[challengerId]) {
       io.to(onlineUsers[challengerId].socketId).emit('challengeRefused', {
         refusedBy: challengedId
@@ -230,35 +209,33 @@ io.on('connection', (socket) => {
     }
   });
 
-  // =========== MAKE MOVE ===========
+  // 5) Make Move => Enforce turn logic
   socket.on('makeMove', ({ gameId, userId, cellIndex }) => {
-    console.log(`makeMove from user ${userId} cell ${cellIndex} in game ${gameId}`);
-
+    console.log(`makeMove user ${userId}, cell ${cellIndex}, game ${gameId}`);
     const game = activeGames[gameId];
-    if (!game) return;
+    if (!game) return; // no game
 
-    // Validate turn, empty cell, no winner
+    // Must be your turn, cell must be empty, no winner
     if (game.currentTurn !== userId || game.board[cellIndex] || game.winner) {
-      return; // do nothing if it's not your turn or cell is used
+      return; // ignore invalid
     }
-
     const [p1, p2] = game.players;
-    const mark = (userId == p1) ? 'X' : 'O';
+    const mark = (String(userId) === String(p1)) ? 'X' : 'O';
     game.board[cellIndex] = mark;
 
-    // Check for winner
-    const winnerMark = checkWinner(game.board);
-    if (winnerMark) {
-      // translate 'X' / 'O' back to p1/p2
-      game.winner = (winnerMark === 'X') ? p1 : p2;
+    // Check winner
+    const foundWinnerMark = checkWinner(game.board);
+    if (foundWinnerMark) {
+      const winnerUserId = (foundWinnerMark === 'X') ? p1 : p2;
+      game.winner = winnerUserId;
     } else if (game.board.every(c => c !== null)) {
       game.winner = 'tie';
     } else {
-      // Switch turn
-      game.currentTurn = (userId == p1) ? p2 : p1;
+      // switch turn
+      game.currentTurn = (String(game.currentTurn) === String(p1)) ? p2 : p1;
     }
 
-    // Send update to both
+    // Update both
     game.players.forEach(pid => {
       if (onlineUsers[pid]) {
         io.to(onlineUsers[pid].socketId).emit('updateGame', {
@@ -270,21 +247,102 @@ io.on('connection', (socket) => {
     });
   });
 
-  // =========== QUIT GAME ===========
+  // 6) Quit => Forfeit
   socket.on('quitGame', ({ gameId, userId }) => {
     console.log(`quitGame from user ${userId} in game ${gameId}`);
     const game = activeGames[gameId];
     if (!game) return;
-
     if (!game.winner) {
-      // Forfeit => other player is winner
       const [p1, p2] = game.players;
-      game.winner = (p1 == userId) ? p2 : p1;
+      game.winner = (String(p1) === String(userId)) ? p2 : p1;
     }
     endGame(gameId);
   });
 
-  // =========== DISCONNECT ===========
+  // 7) Replay => each user must also accept
+  socket.on('requestReplay', ({ gameId, userId }) => {
+    console.log(`requestReplay from ${userId} in game ${gameId}`);
+    const game = activeGames[gameId];
+    if (!game) return;
+
+    // Mark that userId wants a replay
+    game.replayVotes[userId] = true;
+
+    // If both players want replay => reset
+    const [p1, p2] = game.players;
+    if (game.replayVotes[p1] && game.replayVotes[p2]) {
+      // Reset board
+      game.board = Array(9).fill(null);
+      game.winner = null;
+      // Keep same currentTurn
+      game.replayVotes = {};
+      console.log('Both players accepted replay => board reset');
+
+      // Notify updateGame
+      game.players.forEach(pid => {
+        if (onlineUsers[pid]) {
+          io.to(onlineUsers[pid].socketId).emit('updateGame', {
+            board: game.board,
+            currentTurn: game.currentTurn,
+            winner: game.winner
+          });
+        }
+      });
+    } else {
+      // The other user sees a prompt
+      const other = (String(userId) === String(p1)) ? p2 : p1;
+      if (onlineUsers[other]) {
+        io.to(onlineUsers[other].socketId).emit('replayRequested', {
+          fromUser: userId
+        });
+      }
+    }
+  });
+
+  // The other user can confirm => do the same
+  socket.on('acceptReplay', ({ gameId, userId }) => {
+    console.log(`acceptReplay from ${userId} in game ${gameId}`);
+    const game = activeGames[gameId];
+    if (!game) return;
+
+    // Mark user acceptance
+    game.replayVotes[userId] = true;
+    const [p1, p2] = game.players;
+
+    // If both in => reset
+    if (game.replayVotes[p1] && game.replayVotes[p2]) {
+      game.board = Array(9).fill(null);
+      game.winner = null;
+      game.replayVotes = {};
+      console.log('Replay reset after both accepted');
+
+      game.players.forEach(pid => {
+        if (onlineUsers[pid]) {
+          io.to(onlineUsers[pid].socketId).emit('updateGame', {
+            board: game.board,
+            currentTurn: game.currentTurn,
+            winner: game.winner
+          });
+        }
+      });
+    }
+  });
+
+  socket.on('refuseReplay', ({ gameId, userId }) => {
+    const game = activeGames[gameId];
+    if (!game) return;
+    console.log(`User ${userId} refused replay => do nothing special`);
+    // Could notify the other user
+    const [p1, p2] = game.players;
+    const other = (String(p1) === String(userId)) ? p2 : p1;
+    if (onlineUsers[other]) {
+      io.to(onlineUsers[other].socketId).emit('replayRefused', { byUser: userId });
+    }
+    // Clear replayVotes
+    game.replayVotes = {};
+  });
+
+  // Disconnect => remove from online
   socket.on('disconnect', () => {
     const userEntry = Object.values(onlineUsers).find(u => u.socketId === socket.id);
     if (userEntry) {
@@ -295,7 +353,7 @@ io.on('connection', (socket) => {
   });
 });
 
-// Finish the game => update stats, broadcast "gameEnded"
+// End the game => update DB stats => gameEnded
 function endGame(gameId) {
   const game = activeGames[gameId];
   if (!game) return;
@@ -306,7 +364,6 @@ function endGame(gameId) {
     updateStats(p1, winner),
     updateStats(p2, winner)
   ]).then(() => {
-    // Notify both
     game.players.forEach(pid => {
       if (onlineUsers[pid]) {
         onlineUsers[pid].inGame = false;
@@ -319,24 +376,24 @@ function endGame(gameId) {
 }
 
 async function updateStats(userId, winner) {
-  if (!onlineUsers[userId]) return;
   let isTie = (winner === 'tie');
   let isWinner = (String(userId) === String(winner));
-
+  // Lost if not winner + not tie
   const lostFlag = (!isWinner && !isTie) ? 1 : 0;
+
   const sql = `
     UPDATE users
     SET games_count = games_count + 1,
-        games_won   = games_won + IF(?, 1, 0),
-        games_lost  = games_lost+ IF(?, 1, 0)
+        games_won   = games_won   + IF(?, 1, 0),
+        games_lost  = games_lost  + IF(?, 1, 0)
     WHERE id = ? OR telegram_id = ?
   `;
   await pool.query(sql, [isWinner, lostFlag, userId, userId]);
 }
 
-// Return updated info to everyone
+// Re-broadcast lobby
 function broadcastLobby() {
-  const playerArray = Object.values(onlineUsers).map(u => ({
+  const arr = Object.values(onlineUsers).map(u => ({
     userId: u.userId,
     displayName: u.name,
     inGame: u.inGame,
@@ -344,10 +401,10 @@ function broadcastLobby() {
     gamesWon:   u.gamesWon,
     gamesLost:  u.gamesLost
   }));
-  io.emit('onlinePlayers', playerArray);
+  io.emit('onlinePlayers', arr);
 }
 
-// TTT winner check => returns 'X' or 'O' or null
+// Check TTT winner => returns 'X','O' or null
 function checkWinner(board) {
   const lines = [
     [0,1,2],[3,4,5],[6,7,8],
@@ -364,5 +421,5 @@ function checkWinner(board) {
 
 const PORT = process.env.PORT || 8080;
 httpServer.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`Server on port ${PORT}`);
 });
